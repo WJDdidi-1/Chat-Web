@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线聊天室</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        #chat-container {
+            max-width: 1200px;
+            margin: 20px auto;
+            display: grid;
+            grid-template-columns: 1fr 280px;
+            gap: 20px;
+            padding: 0 20px;
+            height: calc(100vh - 40px);
+        }
+
+        .main-chat {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #fff;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            max-width: 80%;
+        }
+
+        .message.self {
+            background: #e3f2fd;
+            margin-left: auto;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .username {
+            font-weight: 500;
+            color: #1976D2;
+        }
+
+        .timestamp {
+            color: #666;
+            font-size: 0.8em;
+        }
+
+        .message-content {
+            word-break: break-word;
+        }
+
+        #users-list {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        #users-list h3 {
+            color: #1976D2;
+            margin-bottom: 16px;
+            font-size: 1.2em;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e3f2fd;
+        }
+
+        #users {
+            list-style: none;
+        }
+
+        #users li {
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+        }
+
+        #users li::before {
+            content: "";
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #4CAF50;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        #message-form {
+            display: flex;
+            gap: 12px;
+            padding: 20px;
+            background: #fff;
+            border-top: 1px solid #eee;
+        }
+
+        #message-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e3f2fd;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+            outline: none;
+        }
+
+        #message-input:focus {
+            border-color: #1976D2;
+        }
+
+        button {
+            padding: 12px 24px;
+            background-color: #1976D2;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #1565C0;
+        }
+
+        .system-message {
+            text-align: center;
+            color: #666;
+            margin: 8px 0;
+            font-style: italic;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            #chat-container {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+
+            .main-chat {
+                height: calc(100vh - 40px);
+            }
+
+            #users-list {
+                display: none;
+            }
+
+            .message {
+                max-width: 90%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <div class="main-chat">
+            <div id="messages"></div>
+            <form id="message-form">
+                <input type="text" id="message-input" placeholder="输入消息..." autocomplete="off">
+                <button type="submit">发送</button>
+            </form>
+        </div>
+        <div id="users-list">
+            <h3>在线用户</h3>
+            <ul id="users"></ul>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <script>
+        // 连接到 Railway 服务器
+        const socket = io('https://your-app-name.railway.app', {
+            path: '/socket.io/',
+            transports: ['websocket', 'polling'],
+            reconnection: true
+        });
+
+        // 添加连接状态处理
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            // 连接成功后再提示输入用户名
+            if (!window.username) {
+                promptUsername();
+            }
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('Connection error:', error);
+            alert('连接服务器失败，请刷新页面重试');
+        });
+
+        function promptUsername() {
+            let username = prompt('请输入您的用户名：');
+            while (!username) {
+                username = prompt('用户名不能为空，请重新输入：');
+            }
+            window.username = username;
+            socket.emit('user join', username);
+        }
+
+        const messagesDiv = document.getElementById('messages');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const usersList = document.getElementById('users');
+
+        messageForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const message = messageInput.value.trim();
+            if (message) {
+                socket.emit('chat message', message);
+                messageInput.value = '';
+            }
+        });
+
+        socket.on('chat message', (data) => {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${data.username === username ? 'self' : ''}`;
+            const time = new Date(data.timestamp).toLocaleTimeString();
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="username">${data.username}</span>
+                    <span class="timestamp">${time}</span>
+                </div>
+                <div class="message-content">${data.message}</div>
+            `;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+
+        function updateUsersList(users) {
+            usersList.innerHTML = users
+                .map(user => `<li>${user}</li>`)
+                .join('');
+        }
+
+        socket.on('user joined', (data) => {
+            updateUsersList(data.users);
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'system-message';
+            messageDiv.innerHTML = `${data.username} 加入了聊天室`;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+
+        socket.on('user left', (data) => {
+            updateUsersList(data.users);
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'system-message';
+            messageDiv.innerHTML = `${data.username} 离开了聊天室`;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+    </script>
+</body>
+</html>
